@@ -1,2 +1,2 @@
 /.env
-.sw[op]
+*.sw[op]
