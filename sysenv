@@ -10,14 +10,14 @@ from Crypto.Cipher import AES
 
 
 USAGE = """Usage:
-    config get <app-name>:<app-version> <key>
-    config set <app-name>:<app-version> <key>=<value>
-    config copy <app-name>:<app-version> <app-name>:<app-version>
+    sysenv get <app-name>:<app-version> <key>
+    sysenv set <app-name>:<app-version> <key>=<value>
+    sysenv copy <app-name>:<app-version> <app-name>:<app-version>
 
     Example:
-        $ config get terra:0.0.1 SYSLOG_ADDRESS
-        $ config set terra:0.0.1 SYSLOG_ADDRESS=boomdeeahhddaah
-        $ config copy terra:0.0.1 terra:0.0.2
+        $ sysenv get terra:0.0.1 SYSLOG_ADDRESS
+        $ sysenv set terra:0.0.1 SYSLOG_ADDRESS=boomdeeahhddaah
+        $ sysenv copy terra:0.0.1 terra:0.0.2
 """
 
 AES_BLOCK_SIZE = 32
