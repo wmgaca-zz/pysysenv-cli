@@ -1,0 +1,192 @@
+#!/usr/bin/env python
+"""ZK helper for getting/setting data in our dubizzlish format."""
+import os
+import sys
+import json
+import base64
+from operator import itemgetter
+from kazoo.client import KazooClient
+from Crypto.Cipher import AES
+
+
+USAGE = """Usage:
+    config get <app-name>:<app-version> <key>
+    config set <app-name>:<app-version> <key>=<value>
+    config copy <app-name>:<app-version> <app-name>:<app-version>
+
+    Example:
+        $ config get terra:0.0.1 SYSLOG_ADDRESS
+        $ config set terra:0.0.1 SYSLOG_ADDRESS=boomdeeahhddaah
+        $ config copy terra:0.0.1 terra:0.0.2
+"""
+
+AES_BLOCK_SIZE = 32
+
+AES_PADDING = "{"
+
+try:
+    ZK_AES_KEY = os.environ["ZK_AES_KEY"]
+except KeyError:
+    print "ZK_AES_KEY not set."
+    sys.exit()
+
+try:
+    ZK_CONN_STRING = os.environ["ZK_CONN_STRING"]
+except KeyError:
+    ZK_CONN_STRING = "localhost:2181"
+    print "ZK_CONN_STRING not found, using %s" % ZK_CONN_STRING
+
+
+class App(object):
+
+    def __init__(self, name, version):
+        self.name = name
+        self.version = version
+
+    @property
+    def path(self):
+        return "/production/docker/%s/%s/env" % (self.name, self.version)
+
+
+def exit(message=None, usage=False):
+    if message:
+        print message
+
+    if message and usage:
+        print ""
+
+    if usage:
+        print USAGE
+
+    sys.exit()
+
+
+def get_zk():
+    if not get_zk._instance:
+        get_zk._instance = KazooClient(hosts=ZK_CONN_STRING)
+        get_zk._instance.start()
+
+    return get_zk._instance
+
+get_zk._instance = None
+
+
+def create_path(app):
+    zk = get_zk()
+    version_path = "/".join(app.path.split("/")[:-1])
+    if not zk.exists(version_path):
+        zk.create(version_path)
+    if not zk.exists(app.path):
+        zk.create(app.path)
+
+
+def encrypt(data):
+    """
+    :type data: string
+    :rtype: string
+    """
+    data = json.dumps(data)
+
+    # Add padding
+    data = data + (AES_BLOCK_SIZE - len(data) % AES_BLOCK_SIZE) * AES_PADDING
+
+    # AES encrypt
+    data = AES.new(ZK_AES_KEY).encrypt(data)
+
+    # basw64 encode and return
+    return  base64.b64encode(data)
+
+
+def decrypt(data):
+    """
+    :type data: string
+    :rtype: string
+    """
+    # Get private key from the environment
+    # base64 decode
+    data = base64.b64decode(data)
+
+    # AES decode & remove the padding
+    data = AES.new(ZK_AES_KEY).decrypt(data).rstrip(AES_PADDING)
+
+    # Remove padding
+    return data
+
+
+def set_data(app, data):
+    zk = get_zk()
+
+    # Make sure the ZK path exists
+    create_path(app)
+
+    zk.set(app.path, encrypt(json.dumps(data)))
+
+
+def get_data(app):
+    zk = get_zk()
+    data = decrypt(zk.get(app.path)[0])
+
+    return json.loads(json.loads(data))
+
+
+def get(app, key):
+    data = get_data(app)
+
+    return get_data(app)[key]
+
+
+def set(app, key, value):
+    data = get_data(app)
+    data[key] = value
+    set_data(app, data)
+
+
+def copy(source_app, target_app):
+    set_data(target_app, get_data(source_app))
+
+
+def main():
+    try:
+        command = sys.argv[1]
+    except IndexError:
+        exit(message="Incorrect args.", usage=True)
+
+    assert command in ("get", "set", "copy")
+
+    if command in ("get", "set"):
+        try:
+            app, data = sys.argv[2:]
+        except ValueError:
+            exit(message="Incorrect args.", usage=True)
+
+        try:
+            app = App(*app.split(":"))
+        except TypeError:
+            exit("Incorrect args.", usage=True)
+
+        if command == "get":
+            print get(app, data)
+        else:
+            try:
+                key, value = data.split("=")
+            except ValueError:
+                exit("Incorrect args.", usage=True)
+
+            set(app, key, value)
+    elif command == "copy":
+        try:
+            source_app, target_app = sys.argv[2:]
+        except ValueError:
+            exit(message="Incorrect args.", usage=True)
+
+        try:
+            source_app = App(*source_app.split(":"))
+            target_app = App(*target_app.split(":"))
+        except TypeError:
+            exit("Incorrect args.", usage=True)
+
+        copy(source_app, target_app)
+
+
+if __name__ == '__main__':
+    main()
