@@ -73,11 +73,11 @@ get_zk._instance = None
 
 def create_path(app):
     zk = get_zk()
-    version_path = "/".join(app.path.split("/")[:-1])
-    if not zk.exists(version_path):
-        zk.create(version_path)
-    if not zk.exists(app.path):
-        zk.create(app.path)
+    parts = app.path.split("/")
+    for index in range(2, len(parts) + 1):
+        path = "/".join(parts[:index])
+        if not zk.exists(path):
+            zk.create(path)
 
 
 def encrypt(data):
@@ -124,9 +124,11 @@ def set_data(app, data):
 
 def get_data(app):
     zk = get_zk()
-    data = decrypt(zk.get(app.path)[0])
-
-    return json.loads(json.loads(data))
+    try:
+        data = decrypt(zk.get(app.path)[0])
+        return json.loads(json.loads(data))
+    except:
+        return {}
 
 
 def get(app, key):
